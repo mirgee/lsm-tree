@@ -42,7 +42,7 @@ impl MemTable {
             map: Arc::new(SkipMap::new()),
             wal: None,
             id,
-            approximate_size: Arc::new(AtomicUsize::new(0))
+            approximate_size: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -74,13 +74,7 @@ impl MemTable {
 
     /// Get a value by key.
     pub fn get(&self, key: &[u8]) -> Option<Bytes> {
-        match self.map.get(key) {
-            Some(val) => match val.value().is_empty() {
-                true => None,
-                false => Some(val.value().clone())
-            }
-            None => None
-        }
+        self.map.get(key).map(|v| v.value().to_owned())
     }
 
     /// Put a key-value pair into the mem-table.
@@ -89,8 +83,11 @@ impl MemTable {
     /// In week 2, day 6, also flush the data to WAL.
     pub fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
         let size = key.len() + value.len();
-        self.map.insert(Bytes::copy_from_slice(key), Bytes::copy_from_slice(value));
-        self.approximate_size.as_ref().fetch_add(size, std::sync::atomic::Ordering::Relaxed);
+        self.map
+            .insert(Bytes::copy_from_slice(key), Bytes::copy_from_slice(value));
+        self.approximate_size
+            .as_ref()
+            .fetch_add(size, std::sync::atomic::Ordering::Relaxed);
         Ok(())
     }
 
