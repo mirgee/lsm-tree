@@ -88,11 +88,14 @@ impl<I: 'static + for<'a> StorageIterator<KeyType<'a> = KeySlice<'a>>> StorageIt
 
     fn next(&mut self) -> Result<()> {
         let current_key = self.key().to_key_vec();
+        
+        // Remove values with the same key from all iterators
         while let Some(mut top_heap_iter) = self.iters.peek_mut() {
             if top_heap_iter.1.key().to_key_vec() == current_key {
-                // Remove the value with the same key from the iterator,
-                // and do not put it back if errored or is not valid anymore
                 if let Err(error) = top_heap_iter.1.next() {
+                    // We must drop the iterator on error, as next may have modified it
+                    // and PeekMut destructor will call partial_cmp to make sure the heap
+                    // invariant is not violated.
                     PeekMut::<'_, HeapWrapper<I>>::pop(top_heap_iter);
                     return Err(error);
                 }
