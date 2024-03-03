@@ -109,6 +109,7 @@ fn test_task2_merge_1() {
         Box::new(i3.clone()),
     ]);
 
+    println!("First passthrough");
     check_iter_result_by_key(
         &mut iter,
         vec![
@@ -122,6 +123,7 @@ fn test_task2_merge_1() {
 
     let mut iter = MergeIterator::create(vec![Box::new(i3), Box::new(i1), Box::new(i2)]);
 
+    println!("Second passthrough");
     check_iter_result_by_key(
         &mut iter,
         vec![
@@ -168,6 +170,7 @@ fn test_task2_merge_2() {
         (Bytes::from("k"), Bytes::from("4.3")),
     ];
 
+    println!("1111");
     let mut iter = MergeIterator::create(vec![
         Box::new(i1.clone()),
         Box::new(i2.clone()),
@@ -176,6 +179,7 @@ fn test_task2_merge_2() {
     ]);
     check_iter_result_by_key(&mut iter, result.clone());
 
+    println!("1112");
     let mut iter = MergeIterator::create(vec![
         Box::new(i2.clone()),
         Box::new(i4.clone()),
@@ -184,6 +188,7 @@ fn test_task2_merge_2() {
     ]);
     check_iter_result_by_key(&mut iter, result.clone());
 
+    println!("1113");
     let mut iter =
         MergeIterator::create(vec![Box::new(i4), Box::new(i3), Box::new(i2), Box::new(i1)]);
     check_iter_result_by_key(&mut iter, result);

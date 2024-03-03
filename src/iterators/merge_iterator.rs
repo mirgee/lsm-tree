@@ -3,6 +3,7 @@
 
 use std::cmp::{self};
 use std::collections::BinaryHeap;
+use std::collections::binary_heap::PeekMut;
 
 use anyhow::Result;
 
@@ -47,7 +48,15 @@ pub struct MergeIterator<I: StorageIterator> {
 
 impl<I: StorageIterator> MergeIterator<I> {
     pub fn create(iters: Vec<Box<I>>) -> Self {
-        unimplemented!()
+        let mut iters = BinaryHeap::from_iter(
+            iters
+                .into_iter()
+                .filter(|it| it.is_valid())
+                .enumerate()
+                .map(|(i, it)| HeapWrapper(i, it)),
+        );
+        let current = iters.pop();
+        Self { iters, current }
     }
 }
 
@@ -57,18 +66,60 @@ impl<I: 'static + for<'a> StorageIterator<KeyType<'a> = KeySlice<'a>>> StorageIt
     type KeyType<'a> = KeySlice<'a>;
 
     fn key(&self) -> KeySlice {
-        unimplemented!()
+        self.current
+            .as_ref()
+            .map(|current| KeySlice::from_slice(current.1.key().raw_ref()))
+            .unwrap_or_default()
     }
 
     fn value(&self) -> &[u8] {
-        unimplemented!()
+        self.current
+            .as_ref()
+            .map(|current| current.1.value())
+            .unwrap_or_default()
     }
 
     fn is_valid(&self) -> bool {
-        unimplemented!()
+        self.current
+            .as_ref()
+            .map(|x| x.1.is_valid())
+            .unwrap_or(false)
     }
 
     fn next(&mut self) -> Result<()> {
-        unimplemented!()
+        let current_key = self.key().to_key_vec();
+        while let Some(mut top_heap_iter) = self.iters.peek_mut() {
+            if top_heap_iter.1.key().to_key_vec() == current_key {
+                // Remove the value with the same key from the iterator,
+                // and do not put it back if errored or is not valid anymore
+                if let Err(error) = top_heap_iter.1.next() {
+                    PeekMut::<'_, HeapWrapper<I>>::pop(top_heap_iter);
+                    return Err(error);
+                }
+                if !top_heap_iter.1.is_valid() {
+                    PeekMut::<'_, HeapWrapper<I>>::pop(top_heap_iter);
+                }
+            } else {
+                break;
+            }
+        }
+
+        // Must not call next if is_valid is false
+        let mut current_iter = self.current.take().unwrap();
+
+        current_iter.1.next()?;
+        
+        if !current_iter.1.is_valid() {
+            if let Some(iter) = self.iters.pop() {
+                self.current = Some(iter);
+            }
+            return Ok(());
+        }
+
+        // Push the current iterator back to the heap
+        self.iters.push(current_iter);
+        self.current = self.iters.pop();
+
+        Ok(())
     }
 }
