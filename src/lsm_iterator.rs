@@ -17,7 +17,18 @@ pub struct LsmIterator {
 
 impl LsmIterator {
     pub(crate) fn new(iter: LsmIteratorInner) -> Result<Self> {
-        Ok(Self { inner: iter })
+        let mut res = Self { inner: iter };
+        res.skip_deleted()?;
+        Ok(res)
+    }
+
+    // TODO: Not sure this is the best way. Currently the notion of empty byte slice for
+    // tombstone is spread across the codebase.
+    fn skip_deleted(&mut self) -> Result<()> {
+        while self.is_valid() && self.inner.value().is_empty() {
+            self.next()?;
+        }
+        Ok(())
     }
 }
 
@@ -37,7 +48,8 @@ impl StorageIterator for LsmIterator {
     }
 
     fn next(&mut self) -> Result<()> {
-        self.inner.next()
+        self.inner.next()?;
+        self.skip_deleted()
     }
 }
 
@@ -62,11 +74,7 @@ impl<I: StorageIterator> StorageIterator for FusedIterator<I> {
     type KeyType<'a> = I::KeyType<'a> where Self: 'a;
 
     fn is_valid(&self) -> bool {
-        if self.has_errored {
-            false
-        } else {
-            self.iter.is_valid()
-        }
+        !self.has_errored && self.iter.is_valid()
     }
 
     fn key(&self) -> Self::KeyType<'_> {
@@ -81,12 +89,17 @@ impl<I: StorageIterator> StorageIterator for FusedIterator<I> {
         if self.has_errored {
             return Err(anyhow::anyhow!("Iterator has already errored"));
         }
-        match self.iter.next() {
-            Ok(res) => Ok(res),
-            Err(err) => {
-                self.has_errored = true;
-                Err(err)
+        if self.iter.is_valid() {
+            match self.iter.next() {
+                Ok(res) => Ok(res),
+                Err(err) => {
+                    self.has_errored = true;
+                    Err(err)
+                }
             }
+        } else {
+            // If iterator is invalid, `next` does not do anything
+            Ok(())
         }
     }
 }

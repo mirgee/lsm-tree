@@ -159,8 +159,10 @@ impl StorageIterator for MemTableIterator {
         KeySlice::from_slice(self.borrow_item().0.as_ref())
     }
 
+    // If key is empty, last iteration of next returned None for either entry or key, i.e.
+    // last item
     fn is_valid(&self) -> bool {
-        !self.borrow_item().1.is_empty()
+        !self.borrow_item().0.is_empty()
     }
 
     fn next(&mut self) -> Result<()> {
