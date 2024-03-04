@@ -2,8 +2,8 @@
 #![allow(dead_code)] // TODO(you): remove this lint after implementing this mod
 
 use std::cmp::{self};
-use std::collections::BinaryHeap;
 use std::collections::binary_heap::PeekMut;
+use std::collections::BinaryHeap;
 
 use anyhow::Result;
 
@@ -88,7 +88,7 @@ impl<I: 'static + for<'a> StorageIterator<KeyType<'a> = KeySlice<'a>>> StorageIt
 
     fn next(&mut self) -> Result<()> {
         let current_key = self.key().to_key_vec();
-        
+
         // Remove values with the same key from all iterators
         while let Some(mut top_heap_iter) = self.iters.peek_mut() {
             if top_heap_iter.1.key().to_key_vec() == current_key {
@@ -111,7 +111,7 @@ impl<I: 'static + for<'a> StorageIterator<KeyType<'a> = KeySlice<'a>>> StorageIt
         let mut current_iter = self.current.take().unwrap();
 
         current_iter.1.next()?;
-        
+
         if !current_iter.1.is_valid() {
             if let Some(iter) = self.iters.pop() {
                 self.current = Some(iter);

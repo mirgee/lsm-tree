@@ -3,6 +3,8 @@
 
 use std::sync::Arc;
 
+use bytes::Buf;
+
 use crate::key::{KeySlice, KeyVec};
 
 use super::Block;
@@ -44,23 +46,36 @@ impl BlockIterator {
 
     /// Returns the key of the current entry.
     pub fn key(&self) -> KeySlice {
-        unimplemented!()
+        self.key.as_key_slice()
     }
 
     /// Returns the value of the current entry.
     pub fn value(&self) -> &[u8] {
-        unimplemented!()
+        self.block
+            .data
+            .get(self.value_range.0..self.value_range.1)
+            .unwrap()
     }
 
     /// Returns true if the iterator is valid.
     /// Note: You may want to make use of `key`
     pub fn is_valid(&self) -> bool {
-        unimplemented!()
+        !self.key.is_empty()
     }
 
     /// Seeks to the first key in the block.
     pub fn seek_to_first(&mut self) {
-        unimplemented!()
+        let first_key_len = self.block.data.get(0..2).unwrap().get_u16() as usize;
+        let first_key = self.block.data.get(2..2 + first_key_len).unwrap();
+        let first_value_len = self
+            .block
+            .data
+            .get(2 + first_key_len..4 + first_key_len)
+            .unwrap()
+            .get_u16() as usize;
+        let first_value = self.block.data.get(4 + first_key_len..4 + first_key_len + first_value_len).unwrap();
+        self.idx = 4 + first_key_len + first_value_len;
+        todo!()
     }
 
     /// Move to the next key in the block.
