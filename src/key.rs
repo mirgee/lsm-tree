@@ -86,6 +86,10 @@ impl Key<Bytes> {
         Key(bytes)
     }
 
+    pub fn from_vec(key: Vec<u8>) -> Self {
+        Self(key.into())
+    }
+
     /// Always use `raw_ref` to access the key in week 1 + 2. This function will be removed in week 3.
     pub fn raw_ref(&self) -> &[u8] {
         self.0.as_ref()
