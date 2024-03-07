@@ -5,6 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Result;
+use bytes::BufMut;
 
 use super::{BlockMeta, FileObject, SsTable};
 use crate::{
@@ -16,6 +17,8 @@ use crate::{
 /// Builds an SSTable from key-value pairs.
 pub struct SsTableBuilder {
     builder: BlockBuilder,
+    // These are temporary holders for the first and last keys of the block currently under
+    // construction.
     first_key: KeyVec,
     last_key: KeyVec,
     data: Vec<u8>,
@@ -54,13 +57,14 @@ impl SsTableBuilder {
 
         assert!(self.builder.add(key, value));
         self.last_key.set_from_slice(key);
+        self.first_key.set_from_slice(key);
     }
 
     fn store_block_and_meta_to_memory(&mut self) {
         let meta = BlockMeta {
             offset: self.data.len(),
-            first_key: self.first_key.clone().into_key_bytes(),
-            last_key: self.last_key.clone().into_key_bytes(),
+            first_key: std::mem::take(&mut self.first_key).into_key_bytes(),
+            last_key: std::mem::take(&mut self.last_key).into_key_bytes(),
         };
         self.meta.push(meta);
 
@@ -84,7 +88,12 @@ impl SsTableBuilder {
         path: impl AsRef<Path>,
     ) -> Result<SsTable> {
         self.store_block_and_meta_to_memory();
+
+        // Meta section follows the data section followed by meta offset
         let block_meta_offset = self.data.len();
+        BlockMeta::encode_block_meta(&self.meta, &mut self.data);
+        self.data.put_u32(block_meta_offset as u32);
+
         let file = FileObject::create(path.as_ref(), self.data)?;
         Ok(SsTable {
             file,

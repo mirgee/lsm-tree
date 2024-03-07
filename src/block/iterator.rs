@@ -112,7 +112,8 @@ impl BlockIterator {
 
     /// Move to the next key in the block.
     pub fn next(&mut self) {
-        self.seek_to_idx(self.idx + 1);
+        self.idx = self.idx + 1;
+        self.seek_to_idx(self.idx);
     }
 
     /// Seek to the first key that >= `key`.

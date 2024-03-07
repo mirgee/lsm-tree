@@ -37,7 +37,7 @@ impl BlockBuilder {
     #[must_use]
     pub fn add(&mut self, key: KeySlice, value: &[u8]) -> bool {
         let current_length_bytes = self.data.len() + self.offsets.len() * SIZEOF_U16 + SIZEOF_U16 /* number of offsets */;
-        if current_length_bytes + key.len() + value.len() + 2 * SIZEOF_U16 /* key & value lengths */ > self.block_size
+        if current_length_bytes + key.len() + value.len() + 3 * SIZEOF_U16 /* key & value lengths + offset */ > self.block_size
             && !self.is_empty()
         // A block must contain at least one entry, regardless of size
         {
@@ -48,6 +48,11 @@ impl BlockBuilder {
         self.data.put(key.raw_ref());
         self.data.put_u16(value.len() as u16);
         self.data.put(value);
+
+        if self.first_key.is_empty() {
+            self.first_key = key.to_key_vec();
+        }
+
         true
     }
 

@@ -15,6 +15,7 @@ use bytes::{Buf, BufMut};
 pub use iterator::SsTableIterator;
 
 use crate::block::Block;
+use crate::constants::SIZEOF_U16;
 use crate::key::{KeyBytes, KeySlice};
 use crate::lsm_storage::BlockCache;
 
@@ -32,10 +33,7 @@ pub struct BlockMeta {
 
 impl BlockMeta {
     /// Encode block meta to a buffer.
-    pub fn encode_block_meta(
-        block_meta: &[BlockMeta],
-        buf: &mut Vec<u8>,
-    ) {
+    pub fn encode_block_meta(block_meta: &[BlockMeta], buf: &mut Vec<u8>) {
         // Converting usize to u32, is this safe?
         buf.put_u32(block_meta.len() as u32);
         for meta in block_meta {
@@ -127,7 +125,28 @@ impl SsTable {
 
     /// Open SSTable from a file.
     pub fn open(id: usize, block_cache: Option<Arc<BlockCache>>, file: FileObject) -> Result<Self> {
-        unimplemented!()
+        let block_meta_offset_num_bytes = 2 * SIZEOF_U16 as u64;
+        let block_meta_offset = (&file.read(
+            file.size() - block_meta_offset_num_bytes,
+            block_meta_offset_num_bytes,
+        )?[..])
+            .get_u32() as u64;
+        let block_meta_bytes = file.read(
+            block_meta_offset,
+            file.size() - block_meta_offset_num_bytes - block_meta_offset,
+        )?;
+        let block_meta = BlockMeta::decode_block_meta(&block_meta_bytes[..]);
+        Ok(Self {
+            file,
+            block_meta_offset: block_meta_offset as usize,
+            id,
+            block_cache,
+            first_key: block_meta.first().unwrap().first_key.to_owned(),
+            last_key: block_meta.last().unwrap().last_key.to_owned(),
+            block_meta,
+            bloom: None,
+            max_ts: 0
+        })
     }
 
     /// Create a mock SST with only first key + last key metadata
@@ -152,7 +171,18 @@ impl SsTable {
 
     /// Read a block from the disk.
     pub fn read_block(&self, block_idx: usize) -> Result<Arc<Block>> {
-        unimplemented!()
+        let block_data_offset = self.block_meta[block_idx].offset;
+        // Block end is indicated either by offset of the next block or start of meta block
+        let block_data_end = self
+            .block_meta
+            .get(block_idx + 1)
+            .map_or(self.block_meta_offset, |meta| meta.offset);
+        let block_len = block_data_end - block_data_offset;
+        Ok(Arc::new(Block::decode(
+            self.file
+                .read(block_data_offset as u64, block_len as u64)?
+                .as_slice(),
+        )))
     }
 
     /// Read a block from disk, with block cache. (Day 4)
@@ -161,10 +191,10 @@ impl SsTable {
     }
 
     /// Find the block that may contain `key`.
-    /// Note: You may want to make use of the `first_key` stored in `BlockMeta`.
-    /// You may also assume the key-value pairs stored in each consecutive block are sorted.
-    pub fn find_block_idx(&self, key: KeySlice) -> usize {
-        unimplemented!()
+    pub fn find_block_idx(&self, searched_key: KeySlice) -> usize {
+        self.block_meta
+            .partition_point(|meta| meta.first_key.as_key_slice() <= searched_key)
+            .saturating_sub(1)
     }
 
     /// Get number of data blocks.

@@ -34,12 +34,12 @@ impl Block {
         let offsets_start = num_offsets_start - num_offsets * SIZEOF_U16;
         let offsets = data[offsets_start..num_offsets_start]
             .as_ref()
-            .chunks(2)
+            .chunks(SIZEOF_U16)
             .map(|mut c| c.get_u16())
             .collect();
         Self {
             data: data[0..offsets_start].to_vec(),
-            offsets
+            offsets,
         }
     }
 }
