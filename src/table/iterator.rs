@@ -20,7 +20,7 @@ impl SsTableIterator {
     pub fn create_and_seek_to_first(table: Arc<SsTable>) -> Result<Self> {
         Ok(Self {
             table: table.clone(),
-            blk_iter: BlockIterator::create_and_seek_to_first(table.read_block(0)?),
+            blk_iter: BlockIterator::create_and_seek_to_first(table.read_block_cached(0)?),
             blk_idx: 0,
         })
     }
@@ -51,7 +51,7 @@ impl SsTableIterator {
 
     fn seek_to_key_in_table(table: Arc<SsTable>, key: KeySlice) -> Result<(usize, BlockIterator)> {
         let mut idx = table.find_block_idx(key);
-        let mut iter = BlockIterator::create_and_seek_to_key(table.read_block(idx).unwrap(), key);
+        let mut iter = BlockIterator::create_and_seek_to_key(table.read_block_cached(idx).unwrap(), key);
         if !iter.is_valid() {
             SsTableIterator::search_to_next_block(&mut idx, &mut iter, table.clone())?;
         }
@@ -61,7 +61,7 @@ impl SsTableIterator {
     fn search_to_next_block(idx: &mut usize, iter: &mut BlockIterator, table: Arc<SsTable>) -> Result<()> {
         *idx += 1;
         if *idx < table.num_of_blocks() {
-            *iter = BlockIterator::create_and_seek_to_first(table.read_block(*idx)?);
+            *iter = BlockIterator::create_and_seek_to_first(table.read_block_cached(*idx)?);
         }
         Ok(())
     }
