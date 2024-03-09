@@ -16,11 +16,14 @@ use crate::compact::{
     SimpleLeveledCompactionController, SimpleLeveledCompactionOptions, TieredCompactionController,
 };
 use crate::iterators::merge_iterator::MergeIterator;
+use crate::iterators::two_merge_iterator::TwoMergeIterator;
+use crate::iterators::StorageIterator;
+use crate::key::Key;
 use crate::lsm_iterator::{FusedIterator, LsmIterator};
 use crate::manifest::Manifest;
 use crate::mem_table::MemTable;
 use crate::mvcc::LsmMvccInner;
-use crate::table::SsTable;
+use crate::table::{SsTable, SsTableIterator};
 
 pub type BlockCache = moka::sync::Cache<(usize, usize), Arc<Block>>;
 
@@ -372,21 +375,54 @@ impl LsmStorageInner {
         lower: Bound<&[u8]>,
         upper: Bound<&[u8]>,
     ) -> Result<FusedIterator<LsmIterator>> {
-        let current_memtable_range = self.state.read().memtable.scan(lower, upper);
-        let frozen_memtables_range = self
-            .state
-            .read()
-            .imm_memtables
-            .iter()
-            .map(|memtable| memtable.scan(lower, upper))
-            .collect::<Vec<_>>();
-        let mut all_memtables = vec![Box::new(current_memtable_range)];
-        for frozen_memtable_range in frozen_memtables_range.into_iter() {
-            all_memtables.push(Box::new(frozen_memtable_range));
-        }
-        let merge_iterator = MergeIterator::create(all_memtables);
-        let lsm_iterator = LsmIterator::new(merge_iterator)?;
-        let fused_iterator = FusedIterator::new(lsm_iterator);
-        Ok(fused_iterator)
+        let snapshot = {
+            let guard = self.state.read();
+            Arc::clone(&guard)
+        };
+
+        let memtable_iters = {
+            let current_memtable_range = snapshot.memtable.scan(lower, upper);
+            let frozen_memtables_range = snapshot
+                .imm_memtables
+                .iter()
+                .map(|memtable| memtable.scan(lower, upper))
+                .collect::<Vec<_>>();
+            let mut all_memtables = vec![Box::new(current_memtable_range)];
+            for frozen_memtable_range in frozen_memtables_range.into_iter() {
+                all_memtables.push(Box::new(frozen_memtable_range));
+            }
+            MergeIterator::create(all_memtables)
+        };
+
+        let l0_iters = {
+            let mut l0_tables = vec![];
+            for l0_idx in &snapshot.l0_sstables {
+                let table = snapshot.sstables.get(l0_idx).unwrap().to_owned();
+                match lower {
+                    Bound::Included(key) => {
+                        l0_tables.push(Box::new(SsTableIterator::create_and_seek_to_key(
+                            table,
+                            Key::from_slice(key),
+                        )?));
+                    }
+                    Bound::Excluded(key) => {
+                        let mut iter =
+                            SsTableIterator::create_and_seek_to_key(table, Key::from_slice(key))?;
+                        if iter.is_valid() {
+                            iter.next()?;
+                        }
+                        l0_tables.push(Box::new(iter));
+                    }
+                    Bound::Unbounded => {
+                        l0_tables.push(Box::new(SsTableIterator::create_and_seek_to_first(table)?));
+                    }
+                }
+            }
+            MergeIterator::create(l0_tables)
+        };
+
+        let two_merge_iterator = TwoMergeIterator::create(memtable_iters, l0_iters)?;
+
+        Ok(FusedIterator::new(LsmIterator::new(two_merge_iterator)?))
     }
 }
