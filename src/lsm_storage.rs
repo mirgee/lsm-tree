@@ -300,6 +300,21 @@ impl LsmStorageInner {
                 }
             }
         }
+
+        for l0_idx in self.state.read().l0_sstables.iter() {
+            let table = self.state.read().sstables.get(l0_idx).unwrap().to_owned();
+            let iter = SsTableIterator::create_and_seek_to_key(table, Key::from_slice(key))?;
+            if iter.is_valid() {
+                if iter.key().raw_ref() == key {
+                    if iter.value().is_empty() {
+                        return Ok(None);
+                    } else {
+                        return Ok(Some(Bytes::copy_from_slice(iter.value())));
+                    }
+                }
+            }
+        }
+        
         Ok(None)
     }
 
