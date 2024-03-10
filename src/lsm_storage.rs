@@ -23,7 +23,7 @@ use crate::lsm_iterator::{FusedIterator, LsmIterator};
 use crate::manifest::Manifest;
 use crate::mem_table::MemTable;
 use crate::mvcc::LsmMvccInner;
-use crate::table::{SsTable, SsTableIterator};
+use crate::table::{SsTable, SsTableBuilder, SsTableIterator};
 
 pub type BlockCache = moka::sync::Cache<(usize, usize), Arc<Block>>;
 
@@ -314,7 +314,7 @@ impl LsmStorageInner {
                 }
             }
         }
-        
+
         Ok(None)
     }
 
@@ -375,8 +375,37 @@ impl LsmStorageInner {
     }
 
     /// Force flush the earliest-created immutable memtable to disk
+    /// We will worry about compaction later
     pub fn force_flush_next_imm_memtable(&self) -> Result<()> {
-        unimplemented!()
+        // Ensure only one thread is flushing at a time, without blocking the state unnecessarily
+        let _state_lock = self.state_lock.lock();
+
+        // Obtain the read guard to the state and snapshot the imm memtable to flush
+        let memtable_to_flush = {
+            let guard = self.state.read();
+            // Can't pop here, we still want the memtable to be readable
+            guard.imm_memtables.last().unwrap().to_owned()
+        };
+
+        // Using SST builder, flush the memtable into SST
+        let sst_id = self.next_sst_id();
+        let mut sst_builder = SsTableBuilder::new(self.options.block_size);
+        memtable_to_flush.flush(&mut sst_builder)?;
+        let sst = sst_builder.build(sst_id, None, self.path_of_sst(sst_id))?; // TODO: Use cache
+
+        // Add the flushed SST to l0
+        {
+            let mut guard = self.state.write();
+            let mut snapshot = guard.as_ref().clone();
+            snapshot.imm_memtables.pop();
+            snapshot.l0_sstables.insert(0, sst_id);
+            // TODO: Here we are copying the SSTable to heap and potentially resizing sstables while
+            // holding the lock on the entire state, can we be more granular?
+            snapshot.sstables.insert(sst_id, Arc::new(sst));
+            *guard = Arc::new(snapshot);
+        }
+
+        Ok(())
     }
 
     pub fn new_txn(&self) -> Result<()> {
