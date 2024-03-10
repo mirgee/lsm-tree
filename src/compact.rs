@@ -145,6 +145,15 @@ impl LsmStorageInner {
     }
 
     fn trigger_flush(&self) -> Result<()> {
+        let num_memtables = {
+            // We should drop here to avoid deadlock as force_flush_next_imm_memtable needs the
+            // write lock
+            let state = self.state.read();
+            state.imm_memtables.len()
+        };
+        if num_memtables >= self.options.num_memtable_limit {
+            self.force_flush_next_imm_memtable()?;
+        }
         Ok(())
     }
 
