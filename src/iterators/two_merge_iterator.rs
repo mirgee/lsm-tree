@@ -38,11 +38,7 @@ impl<
     }
 
     pub fn create(a: A, b: B) -> Result<Self> {
-        let mut new = Self {
-            use_a: false,
-            a,
-            b,
-        };
+        let mut new = Self { use_a: false, a, b };
         Self::skip_b(&new.a, &mut new.b)?;
         new.use_a = Self::use_a(&new.a, &new.b);
         Ok(new)
@@ -89,5 +85,9 @@ impl<
         Self::skip_b(&self.a, &mut self.b)?;
         self.use_a = Self::use_a(&self.a, &self.b);
         Ok(())
+    }
+
+    fn num_active_iterators(&self) -> usize {
+        self.a.num_active_iterators() + self.b.num_active_iterators()
     }
 }

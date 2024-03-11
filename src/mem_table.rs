@@ -105,7 +105,7 @@ impl MemTable {
             |map| map.range((map_bound(lower), map_bound(upper))),
             (Bytes::new(), Bytes::new()),
         );
-        let _ = iter.next();
+        iter.next().unwrap();
         iter
     }
 

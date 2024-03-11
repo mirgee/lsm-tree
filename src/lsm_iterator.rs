@@ -1,11 +1,17 @@
 #![allow(unused_variables)] // TODO(you): remove this lint after implementing this mod
 #![allow(dead_code)] // TODO(you): remove this lint after implementing this mod
 
+use std::ops::Bound;
+
 use anyhow::Result;
+use bytes::Bytes;
 
 use crate::{
-    iterators::{merge_iterator::MergeIterator, StorageIterator, two_merge_iterator::TwoMergeIterator},
-    mem_table::MemTableIterator, table::SsTableIterator,
+    iterators::{
+        merge_iterator::MergeIterator, two_merge_iterator::TwoMergeIterator, StorageIterator,
+    },
+    mem_table::MemTableIterator,
+    table::SsTableIterator,
 };
 
 /// Represents the internal type for an LSM iterator. This type will be changed across the tutorial for multiple times.
@@ -14,11 +20,17 @@ type LsmIteratorInner =
 
 pub struct LsmIterator {
     inner: LsmIteratorInner,
+    upper_bound: Bound<Bytes>,
+    is_valid: bool,
 }
 
 impl LsmIterator {
-    pub(crate) fn new(iter: LsmIteratorInner) -> Result<Self> {
-        let mut res = Self { inner: iter };
+    pub(crate) fn new(iter: LsmIteratorInner, upper_bound: Bound<Bytes>) -> Result<Self> {
+        let mut res = Self {
+            is_valid: iter.is_valid(),
+            inner: iter,
+            upper_bound,
+        };
         res.skip_deleted()?;
         Ok(res)
     }
@@ -37,7 +49,7 @@ impl StorageIterator for LsmIterator {
     type KeyType<'a> = &'a [u8];
 
     fn is_valid(&self) -> bool {
-        self.inner.is_valid()
+        self.is_valid
     }
 
     fn key(&self) -> &[u8] {
@@ -50,7 +62,21 @@ impl StorageIterator for LsmIterator {
 
     fn next(&mut self) -> Result<()> {
         self.inner.next()?;
-        self.skip_deleted()
+        if !self.inner.is_valid() {
+            self.is_valid = false;
+            return Ok(());
+        }
+        match &self.upper_bound {
+            Bound::Included(key) => self.is_valid = self.key() <= key,
+            Bound::Excluded(key) => self.is_valid = self.key() < key,
+            Bound::Unbounded => {}
+        };
+        self.skip_deleted()?;
+        Ok(())
+    }
+
+    fn num_active_iterators(&self) -> usize {
+        self.inner.num_active_iterators()
     }
 }
 
@@ -102,5 +128,9 @@ impl<I: StorageIterator> StorageIterator for FusedIterator<I> {
             // If iterator is invalid, `next` does not do anything
             Ok(())
         }
+    }
+
+    fn num_active_iterators(&self) -> usize {
+        self.iter.num_active_iterators()
     }
 }
