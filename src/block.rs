@@ -3,7 +3,7 @@
 mod builder;
 mod iterator;
 
-use crate::constants::SIZEOF_U16;
+use crate::{constants::SIZEOF_U16, key::KeyVec};
 
 pub use builder::BlockBuilder;
 use bytes::{Buf, BufMut, Bytes};
@@ -41,5 +41,13 @@ impl Block {
             data: data[0..offsets_start].to_vec(),
             offsets,
         }
+    }
+
+    pub fn get_first_key(&self) -> KeyVec {
+        let mut buf = &self.data[..];
+        buf.get_u16();
+        let key_len = buf.get_u16();
+        let key = &buf[..key_len as usize];
+        KeyVec::from_vec(key.to_vec())
     }
 }

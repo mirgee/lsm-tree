@@ -29,11 +29,11 @@ pub struct BlockIterator {
 impl BlockIterator {
     fn new(block: Arc<Block>) -> Self {
         Self {
+            first_key: block.get_first_key(),
             block,
             key: KeyVec::new(),
             value_range: (0, 0),
             idx: 0,
-            first_key: KeyVec::new(),
         }
     }
 
@@ -53,11 +53,13 @@ impl BlockIterator {
 
     /// Returns the key of the current entry.
     pub fn key(&self) -> KeySlice {
+        assert!(!self.key.is_empty());
         self.key.as_key_slice()
     }
 
     /// Returns the value of the current entry.
     pub fn value(&self) -> &[u8] {
+        assert!(!self.key.is_empty());
         self.block
             .data
             .get(self.value_range.0..self.value_range.1)
@@ -94,18 +96,20 @@ impl BlockIterator {
     fn seek_to_offset_bytes(&mut self, offset_bytes: usize) {
         let mut current_entry = self.block.data[offset_bytes..].as_ref();
 
-        let key_len = current_entry.get_u16() as usize;
-        let key = current_entry[..key_len].as_ref();
-        current_entry.advance(key_len);
+        let overlap = current_entry.get_u16() as usize;
+        let key_rem_len = current_entry.get_u16() as usize;
+        let key = current_entry[..key_rem_len].as_ref();
+        current_entry.advance(key_rem_len);
 
         let value_len = current_entry.get_u16() as usize;
         let value = current_entry[..value_len].as_ref();
         current_entry.advance(value_len);
 
         self.key.clear();
+        self.key.append(&self.first_key.raw_ref()[..overlap]);
         self.key.append(key);
 
-        let value_range_begin = offset_bytes + SIZEOF_U16 + key_len + SIZEOF_U16;
+        let value_range_begin = offset_bytes + SIZEOF_U16 + SIZEOF_U16 + key_rem_len + SIZEOF_U16;
         let value_range_end = value_range_begin + value_len;
         self.value_range = (value_range_begin, value_range_end);
     }
