@@ -125,26 +125,28 @@ impl SsTable {
 
     /// Open SSTable from a file.
     pub fn open(id: usize, block_cache: Option<Arc<BlockCache>>, file: FileObject) -> Result<Self> {
-        let block_meta_offset_num_bytes = 2 * SIZEOF_U16 as u64;
-        let block_meta_offset = (&file.read(
-            file.size() - block_meta_offset_num_bytes,
-            block_meta_offset_num_bytes,
+        let offset_num_bytes = 2 * SIZEOF_U16 as u64;
+        let bloom_offset =
+            (&file.read(file.size() - offset_num_bytes, offset_num_bytes)?[..]).get_u32() as u64;
+        let bloom_bytes = file.read(bloom_offset, file.size() - offset_num_bytes - bloom_offset)?;
+        let bloom = Bloom::decode(bloom_bytes.as_slice())?;
+
+        let meta_offset = (&file.read(
+            bloom_offset - offset_num_bytes,
+            offset_num_bytes,
         )?[..])
             .get_u32() as u64;
-        let block_meta_bytes = file.read(
-            block_meta_offset,
-            file.size() - block_meta_offset_num_bytes - block_meta_offset,
-        )?;
-        let block_meta = BlockMeta::decode_block_meta(&block_meta_bytes[..]);
+        let meta_bytes = file.read(meta_offset, bloom_offset - meta_offset - offset_num_bytes)?;
+        let block_meta = BlockMeta::decode_block_meta(&meta_bytes[..]);
         Ok(Self {
             file,
-            block_meta_offset: block_meta_offset as usize,
+            block_meta_offset: bloom_offset as usize,
             id,
             block_cache,
             first_key: block_meta.first().unwrap().first_key.to_owned(),
             last_key: block_meta.last().unwrap().last_key.to_owned(),
             block_meta,
-            bloom: None,
+            bloom: Some(bloom),
             max_ts: 0,
         })
     }
