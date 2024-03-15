@@ -22,6 +22,13 @@ pub struct SstConcatIterator {
 impl SstConcatIterator {
     pub fn create_and_seek_to_first(sstables: Vec<Arc<SsTable>>) -> Result<Self> {
         Self::validate(&sstables);
+        if sstables.is_empty() {
+            return Ok(Self {
+                current: None,
+                next_sst_idx: 0,
+                sstables,
+            });
+        }
         let mut res = Self {
             current: Some(SsTableIterator::create_and_seek_to_first(
                 sstables[0].clone(),
