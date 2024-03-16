@@ -131,11 +131,8 @@ impl SsTable {
         let bloom_bytes = file.read(bloom_offset, file.size() - offset_num_bytes - bloom_offset)?;
         let bloom = Bloom::decode(bloom_bytes.as_slice())?;
 
-        let meta_offset = (&file.read(
-            bloom_offset - offset_num_bytes,
-            offset_num_bytes,
-        )?[..])
-            .get_u32() as u64;
+        let meta_offset =
+            (&file.read(bloom_offset - offset_num_bytes, offset_num_bytes)?[..]).get_u32() as u64;
         let meta_bytes = file.read(meta_offset, bloom_offset - meta_offset - offset_num_bytes)?;
         let block_meta = BlockMeta::decode_block_meta(&meta_bytes[..]);
         Ok(Self {

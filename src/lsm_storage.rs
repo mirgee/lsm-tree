@@ -315,15 +315,34 @@ impl LsmStorageInner {
             }
         }
 
+        let keep_table = |key: &[u8], table: &SsTable| -> bool {
+            if key_within(
+                key,
+                table.first_key().as_key_slice(),
+                table.last_key().as_key_slice(),
+            ) {
+                if let Some(bloom) = &table.bloom {
+                    if bloom.may_contain(farmhash::fingerprint32(key)) {
+                        return true;
+                    }
+                } else {
+                    return true;
+                }
+            }
+            return false;
+        };
+
         for l0_idx in state_snapshot.l0_sstables.iter() {
-            let table = self.state.read().sstables.get(l0_idx).unwrap().to_owned();
-            let iter = SsTableIterator::create_and_seek_to_key(table, Key::from_slice(key))?;
-            if iter.is_valid() {
-                if iter.key().raw_ref() == key {
-                    if iter.value().is_empty() {
-                        return Ok(None);
-                    } else {
-                        return Ok(Some(Bytes::copy_from_slice(iter.value())));
+            let table = state_snapshot.sstables.get(l0_idx).unwrap().to_owned();
+            if keep_table(key, &table) {
+                let iter = SsTableIterator::create_and_seek_to_key(table, Key::from_slice(key))?;
+                if iter.is_valid() {
+                    if iter.key().raw_ref() == key {
+                        if iter.value().is_empty() {
+                            return Ok(None);
+                        } else {
+                            return Ok(Some(Bytes::copy_from_slice(iter.value())));
+                        }
                     }
                 }
             }
@@ -332,13 +351,15 @@ impl LsmStorageInner {
         for (_, lx_idxs) in &state_snapshot.levels {
             for idx in lx_idxs {
                 let table = state_snapshot.sstables.get(idx).unwrap().to_owned();
-                let iter = SsTableIterator::create_and_seek_to_key(table, Key::from_slice(key))?;
-                if iter.is_valid() {
-                    if iter.key().raw_ref() == key {
-                        if iter.value().is_empty() {
-                            return Ok(None);
-                        } else {
-                            return Ok(Some(Bytes::copy_from_slice(iter.value())));
+                if keep_table(key, &table) {
+                    let iter = SsTableIterator::create_and_seek_to_key(table, Key::from_slice(key))?;
+                    if iter.is_valid() {
+                        if iter.key().raw_ref() == key {
+                            if iter.value().is_empty() {
+                                return Ok(None);
+                            } else {
+                                return Ok(Some(Bytes::copy_from_slice(iter.value())));
+                            }
                         }
                     }
                 }
@@ -586,4 +607,8 @@ fn range_overlap(
         _ => {}
     }
     true
+}
+
+fn key_within(key: &[u8], table_begin: KeySlice, table_end: KeySlice) -> bool {
+    key >= table_begin.raw_ref() && key <= table_end.raw_ref()
 }
