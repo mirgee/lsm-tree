@@ -6,6 +6,7 @@ use crate::lsm_storage::LsmStorageState;
 pub struct SimpleLeveledCompactionOptions {
     pub size_ratio_percent: usize,
     pub level0_file_num_compaction_trigger: usize,
+    // Excludes L0
     pub max_levels: usize,
 }
 
@@ -33,9 +34,54 @@ impl SimpleLeveledCompactionController {
     /// Returns `None` if no compaction needs to be scheduled. The order of SSTs in the compaction task id vector matters.
     pub fn generate_compaction_task(
         &self,
-        _snapshot: &LsmStorageState,
+        snapshot: &LsmStorageState,
     ) -> Option<SimpleLeveledCompactionTask> {
-        unimplemented!()
+        // Implement just the L0 trigger for now
+        if snapshot.l0_sstables.len() >= self.options.level0_file_num_compaction_trigger {
+            return Some(SimpleLeveledCompactionTask {
+                upper_level: None,
+                upper_level_sst_ids: snapshot.l0_sstables.clone(),
+                lower_level: 1,
+                lower_level_sst_ids: snapshot.levels[0].1.clone(),
+                is_lower_level_bottom_level: false,
+            });
+        } else {
+            let mut level_sizes = vec![];
+            level_sizes.push(snapshot.l0_sstables.len());
+            for (_, ssts) in &snapshot.levels {
+                level_sizes.push(ssts.len());
+            }
+            // TODO: What levels should be compacted in case only max_levels triggers?
+            assert!(level_sizes.len() - 1 <= self.options.max_levels);
+            for upper_level in 0..self.options.max_levels {
+                let upper_level_size = if upper_level == 0 {
+                    snapshot.l0_sstables.len()
+                } else {
+                    snapshot.levels[upper_level - 1].1.len()
+                };
+                let lower_level = upper_level + 1;
+                let lower_level_size = snapshot.levels[lower_level - 1].1.len();
+                let size_ratio_percent = lower_level_size as f64 / upper_level_size as f64 * 100.0;
+                if size_ratio_percent < self.options.size_ratio_percent as f64 {
+                    return Some(SimpleLeveledCompactionTask {
+                        upper_level: if upper_level == 0 {
+                            None
+                        } else {
+                            Some(upper_level)
+                        },
+                        upper_level_sst_ids: if upper_level == 0 {
+                            snapshot.l0_sstables.clone()
+                        } else {
+                            snapshot.levels[upper_level - 1].1.clone()
+                        },
+                        lower_level,
+                        lower_level_sst_ids: snapshot.levels[lower_level - 1].1.clone(),
+                        is_lower_level_bottom_level: lower_level == self.options.max_levels,
+                    });
+                }
+            }
+        }
+        None
     }
 
     /// Apply the compaction result.
@@ -47,10 +93,27 @@ impl SimpleLeveledCompactionController {
     /// in your implementation.
     pub fn apply_compaction_result(
         &self,
-        _snapshot: &LsmStorageState,
-        _task: &SimpleLeveledCompactionTask,
-        _output: &[usize],
+        snapshot: &LsmStorageState, // TODO: While not take by value?
+        task: &SimpleLeveledCompactionTask,
+        output: &[usize], // TODO: Why not take vec
     ) -> (LsmStorageState, Vec<usize>) {
-        unimplemented!()
+        let mut snapshot = snapshot.clone();
+        let mut to_remove: Vec<usize> = vec![];
+        if let Some(upper_level) = task.upper_level {
+            assert_eq!(task.upper_level_sst_ids, snapshot.levels[upper_level - 1].1);
+            to_remove.extend(&task.upper_level_sst_ids);
+            snapshot.levels[upper_level - 1].1.clear();
+        } else {
+            to_remove.extend(&task.upper_level_sst_ids);
+            // TODO: New l0_sstables could have been flushed to l0 since the compaction task was generated
+            snapshot.l0_sstables.clear();
+        }
+        assert_eq!(
+            task.lower_level_sst_ids,
+            snapshot.levels[task.lower_level - 1].1
+        );
+        to_remove.extend(&task.lower_level_sst_ids);
+        snapshot.levels[task.lower_level - 1].1 = output.to_vec();
+        (snapshot, to_remove)
     }
 }
