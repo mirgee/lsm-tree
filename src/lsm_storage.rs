@@ -161,6 +161,7 @@ impl Drop for MiniLsm {
 impl MiniLsm {
     pub fn close(&self) -> Result<()> {
         self.flush_notifier.send(()).ok();
+        self.compaction_notifier.send(()).ok();
 
         // The following should not be necessary, but just to make sure the thread exits
         let mut flush_thread = self.flush_thread.lock();
@@ -169,6 +170,26 @@ impl MiniLsm {
                 .join()
                 .map_err(|_| anyhow::anyhow!("flush thread panicked"))?;
         }
+
+        let mut compaction_thread = self.compaction_thread.lock();
+        if let Some(handle) = compaction_thread.take() {
+            handle
+                .join()
+                .map_err(|_| anyhow::anyhow!("compaction thread panicked"))?;
+        }
+
+        if !self.inner.options.enable_wal {
+            // Freeze the current memtable
+            if !self.inner.state.read().memtable.is_empty() {
+                self.inner
+                    .force_freeze_memtable(&self.inner.state_lock.lock())?;
+            };
+            // Flush all memtables to disk
+            while !self.inner.state.read().imm_memtables.is_empty() {
+                self.inner.force_flush_next_imm_memtable()?;
+            }
+            self.inner.sync_dir()?;
+        };
 
         Ok(())
     }

@@ -39,8 +39,7 @@ impl Manifest {
     pub fn recover(path: impl AsRef<Path>) -> Result<(Self, Vec<ManifestRecord>)> {
         let mut file = OpenOptions::new()
             .read(true)
-            .create_new(true)
-            .write(true)
+            .append(true)
             .open(path)?;
         let mut buf = Vec::new();
         file.read_to_end(&mut buf)?;
