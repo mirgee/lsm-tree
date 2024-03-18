@@ -348,7 +348,7 @@ impl LsmStorageInner {
             }
         }
 
-        for (_, lx_idxs) in &state_snapshot.levels {
+        for (_level, lx_idxs) in &state_snapshot.levels {
             for idx in lx_idxs {
                 let table = state_snapshot.sstables.get(idx).unwrap().to_owned();
                 if keep_table(key, &table) {

@@ -160,9 +160,8 @@ impl LsmStorageInner {
             CompactionTask::Simple(SimpleLeveledCompactionTask {
                 upper_level,
                 upper_level_sst_ids,
-                lower_level,
                 lower_level_sst_ids,
-                is_lower_level_bottom_level,
+                ..
             }) => {
                 match upper_level {
                     None => {
@@ -298,16 +297,22 @@ impl LsmStorageInner {
         let Some(task) = task else {
             return Ok(());
         };
+        self.dump_structure();
+        println!("running compaction task: {:?}", task);
 
         let new_ssts = self.compact(&task)?;
 
         {
             let _state_lock = self.state_lock.lock();
-            let state_snapshot = self.state.read().as_ref().clone();
+            let mut state_snapshot = self.state.read().as_ref().clone();
             let mut sst_ids = Vec::new();
 
             for new_sst in new_ssts {
                 sst_ids.push(new_sst.sst_id());
+                assert!(state_snapshot
+                    .sstables
+                    .insert(new_sst.sst_id(), new_sst)
+                    .is_none());
             }
 
             let (mut snapshot, ssts_to_delete) = self
@@ -321,6 +326,12 @@ impl LsmStorageInner {
 
             *self.state.write() = Arc::new(snapshot);
             // self.sync_dir()?;
+            println!(
+                "compaction finished: {} files removed, {} files added, output={:?}",
+                ssts_to_delete.len(),
+                sst_ids.len(),
+                sst_ids
+            );
         };
         Ok(())
     }

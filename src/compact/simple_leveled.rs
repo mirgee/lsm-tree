@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use serde::{Deserialize, Serialize};
 
 use crate::lsm_storage::LsmStorageState;
@@ -105,8 +107,18 @@ impl SimpleLeveledCompactionController {
             snapshot.levels[upper_level - 1].1.clear();
         } else {
             to_remove.extend(&task.upper_level_sst_ids);
-            // TODO: New l0_sstables could have been flushed to l0 since the compaction task was generated
-            snapshot.l0_sstables.clear();
+            let mut l0_ssts_to_be_compacted = task
+                .upper_level_sst_ids
+                .iter()
+                .copied()
+                .collect::<HashSet<_>>();
+            let l0_ssts_newly_added = snapshot
+                .l0_sstables
+                .iter()
+                .copied()
+                .filter(|sst| !l0_ssts_to_be_compacted.remove(sst))
+                .collect();
+            snapshot.l0_sstables = l0_ssts_newly_added;
         }
         assert_eq!(
             task.lower_level_sst_ids,
