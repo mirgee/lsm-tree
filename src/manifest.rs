@@ -30,7 +30,7 @@ impl Manifest {
                 OpenOptions::new()
                     .read(true)
                     .create_new(true)
-                    .read(true)
+                    .write(true)
                     .open(path)?,
             )),
         })
@@ -40,7 +40,7 @@ impl Manifest {
         let mut file = OpenOptions::new()
             .read(true)
             .create_new(true)
-            .read(true)
+            .write(true)
             .open(path)?;
         let mut buf = Vec::new();
         file.read_to_end(&mut buf)?;
@@ -75,6 +75,7 @@ impl Manifest {
         let len = json.len() as u64;
         file.write_all(&len.to_be_bytes())?;
         file.write_all(&json)?;
+        file.sync_all()?;
         Ok(())
     }
 }

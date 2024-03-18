@@ -21,6 +21,7 @@ use crate::iterators::two_merge_iterator::TwoMergeIterator;
 use crate::iterators::StorageIterator;
 use crate::key::KeySlice;
 use crate::lsm_storage::{LsmStorageInner, LsmStorageState};
+use crate::manifest::ManifestRecord;
 use crate::table::{SsTable, SsTableBuilder, SsTableIterator};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -247,7 +248,7 @@ impl LsmStorageInner {
         let new_ssts = self.compact(&compaction_task)?;
 
         {
-            let _state_lock = self.state_lock.lock();
+            let state_lock = self.state_lock.lock();
             let mut state_snapshot = self.state.read().as_ref().clone();
 
             // No SSTables should have added or remobed from L1
@@ -269,7 +270,7 @@ impl LsmStorageInner {
             }
 
             // Update L0 and L1 indeces; newly created moved to L1
-            state_snapshot.levels[0].1 = new_sst_ids;
+            state_snapshot.levels[0].1 = new_sst_ids.clone();
 
             // In L0, remove all except those which are not in l0_sstables
             // those were added after the compaction was triggered
@@ -280,7 +281,11 @@ impl LsmStorageInner {
                 .collect();
 
             *self.state.write() = Arc::new(state_snapshot);
-            // self.sync_dir()?;
+            self.sync_dir()?;
+            self.manifest.as_ref().unwrap().add_record(
+                &state_lock,
+                ManifestRecord::Compaction(compaction_task, new_sst_ids.clone()),
+            )?;
         };
         Ok(())
     }
@@ -303,7 +308,7 @@ impl LsmStorageInner {
         let new_ssts = self.compact(&task)?;
 
         {
-            let _state_lock = self.state_lock.lock();
+            let state_lock = self.state_lock.lock();
             let mut state_snapshot = self.state.read().as_ref().clone();
             let mut sst_ids = Vec::new();
 
@@ -325,7 +330,13 @@ impl LsmStorageInner {
             }
 
             *self.state.write() = Arc::new(snapshot);
-            // self.sync_dir()?;
+
+            self.sync_dir()?;
+            self.manifest.as_ref().unwrap().add_record(
+                &state_lock,
+                ManifestRecord::Compaction(task, sst_ids.clone()),
+            )?;
+
             println!(
                 "compaction finished: {} files removed, {} files added, output={:?}",
                 ssts_to_delete.len(),

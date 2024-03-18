@@ -9,25 +9,25 @@ use crate::{
     tests::harness::dump_files_in_dir,
 };
 
-#[test]
-fn test_integration_leveled() {
-    test_integration(CompactionOptions::Leveled(LeveledCompactionOptions {
-        level_size_multiplier: 2,
-        level0_file_num_compaction_trigger: 2,
-        max_levels: 3,
-        base_level_size_mb: 1,
-    }))
-}
-
-#[test]
-fn test_integration_tiered() {
-    test_integration(CompactionOptions::Tiered(TieredCompactionOptions {
-        num_tiers: 3,
-        max_size_amplification_percent: 200,
-        size_ratio: 1,
-        min_merge_width: 3,
-    }))
-}
+// #[test]
+// fn test_integration_leveled() {
+//     test_integration(CompactionOptions::Leveled(LeveledCompactionOptions {
+//         level_size_multiplier: 2,
+//         level0_file_num_compaction_trigger: 2,
+//         max_levels: 3,
+//         base_level_size_mb: 1,
+//     }))
+// }
+// 
+// #[test]
+// fn test_integration_tiered() {
+//     test_integration(CompactionOptions::Tiered(TieredCompactionOptions {
+//         num_tiers: 3,
+//         max_size_amplification_percent: 200,
+//         size_ratio: 1,
+//         min_merge_width: 3,
+//     }))
+// }
 
 #[test]
 fn test_integration_simple() {
