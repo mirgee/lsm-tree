@@ -281,11 +281,13 @@ impl LsmStorageInner {
                 .collect();
 
             *self.state.write() = Arc::new(state_snapshot);
-            self.sync_dir()?;
+
             self.manifest.as_ref().unwrap().add_record(
                 &state_lock,
                 ManifestRecord::Compaction(compaction_task, new_sst_ids.clone()),
             )?;
+
+            self.sync_dir()?;
         };
         Ok(())
     }
@@ -302,8 +304,8 @@ impl LsmStorageInner {
         let Some(task) = task else {
             return Ok(());
         };
-        self.dump_structure();
-        println!("running compaction task: {:?}", task);
+        // self.dump_structure();
+        // println!("running compaction task: {:?}", task);
 
         let new_ssts = self.compact(&task)?;
 
@@ -331,11 +333,12 @@ impl LsmStorageInner {
 
             *self.state.write() = Arc::new(snapshot);
 
-            self.sync_dir()?;
             self.manifest.as_ref().unwrap().add_record(
                 &state_lock,
                 ManifestRecord::Compaction(task, sst_ids.clone()),
             )?;
+
+            self.sync_dir()?;
 
             println!(
                 "compaction finished: {} files removed, {} files added, output={:?}",

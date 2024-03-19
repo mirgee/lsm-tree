@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use tempfile::tempdir;
 
 use crate::{
@@ -66,6 +68,7 @@ fn test_integration(compaction_options: CompactionOptions) {
     // ensure all SSTs are flushed
     assert!(storage.inner.state.read().memtable.is_empty());
     assert!(storage.inner.state.read().imm_memtables.is_empty());
+    // std::thread::sleep(Duration::from_secs(1)); // wait until all memtables flush
     storage.dump_structure();
     drop(storage);
     dump_files_in_dir(&dir);
@@ -75,6 +78,7 @@ fn test_integration(compaction_options: CompactionOptions) {
         LsmStorageOptions::default_for_week2_test(compaction_options.clone()),
     )
     .unwrap();
+    storage.dump_structure();
     assert_eq!(&storage.get(b"0").unwrap().unwrap()[..], b"v20".as_slice());
     assert_eq!(&storage.get(b"1").unwrap().unwrap()[..], b"v20".as_slice());
     assert_eq!(storage.get(b"2").unwrap(), None);
