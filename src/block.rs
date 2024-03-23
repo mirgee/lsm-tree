@@ -31,7 +31,6 @@ impl Block {
     pub fn decode(data: &[u8]) -> Self {
         let num_offsets_start = data.len() - SIZEOF_U16;
         let num_offsets = data[num_offsets_start..].as_ref().get_u16() as usize;
-        println!("Offsets: {:?}", num_offsets);
         let offsets_start = num_offsets_start - num_offsets * SIZEOF_U16;
         let offsets = data[offsets_start..num_offsets_start]
             .as_ref()

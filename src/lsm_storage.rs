@@ -304,7 +304,6 @@ impl LsmStorageInner {
             manifest
         } else {
             let (manifest, records) = Manifest::recover(manifest_path)?;
-            println!("RECORDS: {:?}", records.iter().map(|r| format!("{:?}", r)).collect::<Vec<_>>());
             for record in records {
                 match record {
                     ManifestRecord::Flush(sst_id) => {
@@ -339,7 +338,6 @@ impl LsmStorageInner {
             state.sstables.insert(*sst_id, Arc::new(sst));
             sst_cnt += 1;
         }
-        println!("{} SSTs opened", sst_cnt);
 
 
         last_sst_id = last_sst_id + 1;
@@ -548,7 +546,6 @@ impl LsmStorageInner {
             snapshot.l0_sstables.insert(0, sst_id);
             // TODO: Here we are copying the SSTable to heap and potentially resizing sstables while
             // holding the lock on the entire state, can we be more granular?
-            println!("flushed {}.sst with size={}", sst_id, sst.table_size());
             snapshot.sstables.insert(sst_id, Arc::new(sst));
             *guard = Arc::new(snapshot);
         }

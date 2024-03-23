@@ -9,7 +9,7 @@ use std::fs::File;
 use std::path::Path;
 use std::sync::Arc;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 pub use builder::SsTableBuilder;
 use bytes::{Buf, BufMut};
 pub use iterator::SsTableIterator;
@@ -34,7 +34,7 @@ pub struct BlockMeta {
 impl BlockMeta {
     /// Encode block meta to a buffer.
     pub fn encode_block_meta(block_meta: &[BlockMeta], buf: &mut Vec<u8>) {
-        // Converting usize to u32, is this safe?
+        let original_len = buf.len();
         buf.put_u32(block_meta.len() as u32);
         for meta in block_meta {
             buf.put_u32(meta.offset as u32);
@@ -43,12 +43,14 @@ impl BlockMeta {
             buf.put_u16(meta.last_key.len() as u16);
             buf.put_slice(meta.last_key.raw_ref());
         }
+        buf.put_u32(crc32fast::hash(&buf[original_len + 4..]));
     }
 
     /// Decode block meta from a buffer.
-    pub fn decode_block_meta(mut buf: impl Buf) -> Vec<BlockMeta> {
+    pub fn decode_block_meta(mut buf: &[u8]) -> Result<Vec<BlockMeta>> {
         let mut metas = Vec::new();
         let num_metas = buf.get_u32();
+        let checksum = crc32fast::hash(&buf[..buf.remaining() - 4]);
         for _ in 0..num_metas {
             let offset = buf.get_u32() as usize;
             let first_key_len = buf.get_u16() as usize;
@@ -59,9 +61,13 @@ impl BlockMeta {
                 offset,
                 first_key,
                 last_key,
-            })
+            });
         }
-        metas
+        if buf.get_u32() != checksum {
+            bail!("meta checksum mismatched");
+        }
+
+        Ok(metas)
     }
 }
 
@@ -134,10 +140,10 @@ impl SsTable {
         let meta_offset =
             (&file.read(bloom_offset - offset_num_bytes, offset_num_bytes)?[..]).get_u32() as u64;
         let meta_bytes = file.read(meta_offset, bloom_offset - meta_offset - offset_num_bytes)?;
-        let block_meta = BlockMeta::decode_block_meta(&meta_bytes[..]);
+        let block_meta = BlockMeta::decode_block_meta(&meta_bytes[..])?;
         Ok(Self {
             file,
-            block_meta_offset: bloom_offset as usize,
+            block_meta_offset: meta_offset as usize,
             id,
             block_cache,
             first_key: block_meta.first().unwrap().first_key.to_owned(),
@@ -176,12 +182,16 @@ impl SsTable {
             .block_meta
             .get(block_idx + 1)
             .map_or(self.block_meta_offset, |meta| meta.offset);
-        let block_len = block_data_end - block_data_offset;
-        Ok(Arc::new(Block::decode(
-            self.file
-                .read(block_data_offset as u64, block_len as u64)?
-                .as_slice(),
-        )))
+        let block_len = block_data_end - block_data_offset - 4;
+        let block_data_with_chksum: Vec<u8> = self
+            .file
+            .read(block_data_offset as u64, (block_data_end - block_data_offset) as u64)?;
+        let block_data = &block_data_with_chksum[..block_len];
+        let checksum = (&block_data_with_chksum[block_len..]).get_u32();
+        if checksum != crc32fast::hash(block_data) {
+            bail!("block checksum mismatched");
+        }
+        Ok(Arc::new(Block::decode(block_data)))
     }
 
     /// Read a block from disk, with block cache. (Day 4)

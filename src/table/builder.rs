@@ -72,8 +72,11 @@ impl SsTableBuilder {
         };
         self.meta.push(meta);
 
-        let block = std::mem::replace(&mut self.builder, BlockBuilder::new(self.block_size));
-        self.data.extend(block.build().encode());
+        let block = std::mem::replace(&mut self.builder, BlockBuilder::new(self.block_size)).build().encode();
+        let checksum = crc32fast::hash(&block);
+        self.data.extend(block);
+        self.data.put_u32(checksum);
+
     }
 
     /// Get the estimated size of the SSTable.
