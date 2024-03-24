@@ -310,7 +310,7 @@ impl LsmStorageInner {
                         state.l0_sstables.insert(0, sst_id);
                         last_sst_id = last_sst_id.max(sst_id);
                     }
-                    ManifestRecord::NewMemtable(_) => {},
+                    ManifestRecord::NewMemtable(_) => {}
                     ManifestRecord::Compaction(task, new_sst_ids) => {
                         // No need to strictly delete sstables, they have probably been deleted
                         let (new_state, _ssts_to_delete) = compaction_controller
@@ -338,7 +338,6 @@ impl LsmStorageInner {
             state.sstables.insert(*sst_id, Arc::new(sst));
             sst_cnt += 1;
         }
-
 
         last_sst_id = last_sst_id + 1;
         state.memtable = Arc::new(MemTable::create(last_sst_id));
@@ -447,16 +446,39 @@ impl LsmStorageInner {
         Ok(None)
     }
 
-    /// Write a batch of data into the storage. Implement in week 2 day 7.
-    pub fn write_batch<T: AsRef<[u8]>>(&self, _batch: &[WriteBatchRecord<T>]) -> Result<()> {
-        unimplemented!()
+    pub fn write_batch<T: AsRef<[u8]>>(&self, batch: &[WriteBatchRecord<T>]) -> Result<()> {
+        for record in batch {
+            match record {
+                WriteBatchRecord::Put(key, value) => {
+                    let key = key.as_ref();
+                    let value = value.as_ref();
+                    assert!(!key.is_empty());
+                    assert!(!value.is_empty());
+                    let size;
+                    {
+                        let guard = self.state.read();
+                        guard.memtable.put(key, value)?;
+                        size = guard.memtable.approximate_size();
+                    }
+                    self.maybe_freeze(size)?;
+                }
+                WriteBatchRecord::Del(key) => {
+                    let key = key.as_ref();
+                    assert!(!key.is_empty());
+                    let size;
+                    {
+                        let guard = self.state.read();
+                        guard.memtable.put(key, b"")?;
+                        size = guard.memtable.approximate_size();
+                    };
+                    self.maybe_freeze(size)?;
+                }
+            }
+        }
+        Ok(())
     }
 
-    /// Put a key-value pair into the storage by writing into the current memtable.
-    pub fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
-        assert!(!key.is_empty());
-        self.state.read().memtable.put(key, value)?;
-        let size = self.state.read().memtable.approximate_size();
+    pub fn maybe_freeze(&self, size: usize) -> Result<()> {
         if size >= self.options.target_sst_size {
             let lock = self.state_lock.lock();
             let size = self.state.read().memtable.approximate_size();
@@ -467,10 +489,14 @@ impl LsmStorageInner {
         Ok(())
     }
 
+    /// Put a key-value pair into the storage by writing into the current memtable.
+    pub fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
+        self.write_batch(&[WriteBatchRecord::Put(key, value)])
+    }
+
     /// Remove a key from the storage by writing an empty value.
     pub fn delete(&self, key: &[u8]) -> Result<()> {
-        assert!(!key.is_empty());
-        self.put(key, b"")
+        self.write_batch(&[WriteBatchRecord::Del(key)])
     }
 
     pub(crate) fn path_of_sst_static(path: impl AsRef<Path>, id: usize) -> PathBuf {
