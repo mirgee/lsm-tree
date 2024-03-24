@@ -2,6 +2,7 @@
 //! This file will be automatically rewritten by the copy-test command.
 
 mod week1_day5;
+mod week2_day6;
 mod week2_day1;
 mod week1_day1;
 mod week1_day3;
