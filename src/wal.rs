@@ -29,7 +29,7 @@ impl Wal {
         })
     }
 
-    // TODO: Immutable reference as output argument really rubs me the wrong way.
+    // TODO: Add checksums
     pub fn recover(path: impl AsRef<Path>, skiplist: &SkipMap<Bytes, Bytes>) -> Result<Self> {
         let path = path.as_ref();
         let mut file = OpenOptions::new()
@@ -68,7 +68,6 @@ impl Wal {
         Ok(())
     }
 
-    // TODO: Why are do we provide sync method here and not in e.g. manifest builder?
     pub fn sync(&self) -> Result<()> {
         let mut file = self.file.lock();
         file.flush()?;

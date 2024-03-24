@@ -1,5 +1,3 @@
-#![allow(dead_code)] // REMOVE THIS LINE after fully implementing this functionality
-
 use std::collections::{BTreeSet, HashMap};
 use std::fs::File;
 use std::ops::Bound;
@@ -24,7 +22,6 @@ use crate::key::{Key, KeySlice};
 use crate::lsm_iterator::{FusedIterator, LsmIterator};
 use crate::manifest::{Manifest, ManifestRecord};
 use crate::mem_table::{map_bound, MemTable};
-use crate::mvcc::LsmMvccInner;
 use crate::table::{FileObject, SsTable, SsTableBuilder, SsTableIterator};
 
 pub type BlockCache = moka::sync::Cache<(usize, usize), Arc<Block>>;
@@ -134,7 +131,6 @@ pub(crate) struct LsmStorageInner {
     pub(crate) options: Arc<LsmStorageOptions>,
     pub(crate) compaction_controller: CompactionController,
     pub(crate) manifest: Option<Manifest>,
-    pub(crate) mvcc: Option<LsmMvccInner>,
     pub(crate) compaction_filters: Arc<Mutex<Vec<CompactionFilter>>>,
 }
 
@@ -332,7 +328,6 @@ impl LsmStorageInner {
             manifest
         };
 
-        let mut sst_cnt = 0;
         for sst_id in state
             .l0_sstables
             .iter()
@@ -345,7 +340,6 @@ impl LsmStorageInner {
                 FileObject::open(&sst_path)?,
             )?;
             state.sstables.insert(*sst_id, Arc::new(sst));
-            sst_cnt += 1;
         }
 
         last_sst_id = last_sst_id + 1;
@@ -364,7 +358,8 @@ impl LsmStorageInner {
             state.memtable = MemTable::create_with_wal(
                 last_sst_id,
                 Self::path_of_wal_static(path, last_sst_id),
-            )?.into();
+            )?
+            .into();
         }
         manifest.add_record_when_init(ManifestRecord::NewMemtable(state.memtable.id()))?;
 
@@ -377,7 +372,6 @@ impl LsmStorageInner {
             compaction_controller,
             manifest: Some(manifest),
             options: options.into(),
-            mvcc: None,
             compaction_filters: Arc::new(Mutex::new(Vec::new())),
         };
 
@@ -547,13 +541,15 @@ impl LsmStorageInner {
     }
 
     /// Force freeze the current memtable to an immutable memtable
-    pub fn force_freeze_memtable(&self, _state_lock_observer: &MutexGuard<'_, ()>) -> Result<()> {
+    pub fn force_freeze_memtable(&self, state_lock_observer: &MutexGuard<'_, ()>) -> Result<()> {
         let mut state_guard = self.state.write();
         let mut state_snapshot = state_guard.as_ref().to_owned();
+
         state_snapshot.memtable.sync_wal()?;
         state_snapshot
             .imm_memtables
             .insert(0, state_snapshot.memtable);
+
         let new_sst_id = self.next_sst_id();
         state_snapshot.memtable = if self.options.enable_wal {
             MemTable::create_with_wal(new_sst_id, self.path_of_wal(new_sst_id))?.into()
@@ -562,10 +558,10 @@ impl LsmStorageInner {
         };
         *state_guard = state_snapshot.into();
 
-        self.manifest.as_ref().unwrap().add_record(
-            _state_lock_observer,
-            ManifestRecord::NewMemtable(new_sst_id),
-        )?;
+        self.manifest
+            .as_ref()
+            .unwrap()
+            .add_record(state_lock_observer, ManifestRecord::NewMemtable(new_sst_id))?;
 
         self.sync_dir()?;
 

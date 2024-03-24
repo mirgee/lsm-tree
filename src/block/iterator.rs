@@ -1,6 +1,3 @@
-#![allow(unused_variables)] // TODO(you): remove this lint after implementing this mod
-#![allow(dead_code)] // TODO(you): remove this lint after implementing this mod
-
 use std::sync::Arc;
 
 use bytes::Buf;
@@ -102,7 +99,6 @@ impl BlockIterator {
         current_entry.advance(key_rem_len);
 
         let value_len = current_entry.get_u16() as usize;
-        let value = current_entry[..value_len].as_ref();
         current_entry.advance(value_len);
 
         self.key.clear();

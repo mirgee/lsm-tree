@@ -1,5 +1,3 @@
-#![allow(dead_code)] // REMOVE THIS LINE after fully implementing this functionality
-
 mod leveled;
 mod simple_leveled;
 mod tiered;
@@ -36,6 +34,7 @@ pub enum CompactionTask {
 }
 
 impl CompactionTask {
+    #[allow(dead_code)]
     fn compact_to_bottom_level(&self) -> bool {
         match self {
             CompactionTask::ForceFullCompaction { .. } => true,
@@ -91,6 +90,7 @@ impl CompactionController {
 }
 
 impl CompactionController {
+    #[allow(dead_code)]
     pub fn flush_to_l0(&self) -> bool {
         matches!(
             self,

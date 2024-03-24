@@ -1,10 +1,7 @@
 use tempfile::tempdir;
 
 use crate::{
-    compact::{
-        CompactionOptions, LeveledCompactionOptions, SimpleLeveledCompactionOptions,
-        TieredCompactionOptions,
-    },
+    compact::{CompactionOptions, SimpleLeveledCompactionOptions},
     lsm_storage::{LsmStorageOptions, MiniLsm},
     tests::harness::dump_files_in_dir,
 };
@@ -18,7 +15,7 @@ use crate::{
 //         base_level_size_mb: 1,
 //     }))
 // }
-// 
+//
 // #[test]
 // fn test_integration_tiered() {
 //     test_integration(CompactionOptions::Tiered(TieredCompactionOptions {
